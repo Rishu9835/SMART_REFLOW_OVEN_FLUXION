@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLUX ION — AI Reflow Controller</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0c10; --bg2: #111520; --bg3: #181d2a;
+    --border: #1e2535; --accent: #f97316; --accent2: #fb923c;
+    --hot: #ef4444; --warm: #f59e0b; --cool: #38bdf8;
+    --green: #22c55e; --text: #e2e8f0; --muted: #64748b;
+    --mono: 'Share Tech Mono', monospace; --sans: 'Syne', sans-serif;
+    --glow: 0 0 20px rgba(249,115,22,0.3);
+    --ai-col: #a78bfa; --ai-glow: 0 0 16px rgba(167,139,250,0.35);
+  }
+  
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    min-height: 100vh; overflow-x: hidden;
+  }
+  
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: linear-gradient(rgba(249,115,22,0.025) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(249,115,22,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  
+  .wrap { position: relative; z-index: 1; max-width: 1600px; margin: 0 auto; padding: 0 20px 60px; }
+  
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 24px 0 18px; border-bottom: 1px solid var(--border); margin-bottom: 20px;
+  }
+  
+  .logo-title { font-family: var(--sans); font-weight: 800; font-size: 22px; letter-spacing: -0.5px; }
+  .logo-title span { color: var(--accent); }
+  .logo-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .08em; margin-top: 2px; }
+  
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  
+  .status-pill {
+    display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 999px;
+    font-family: var(--mono); font-size: 11px;
+  }
+  
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+    transition: all 0.4s;
+  }
+  
+  .status-dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1.5s infinite; }
+  
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  
+  .btn {
+    padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .05em; transition: all 0.18s;
+  }
+  
+  .btn-connect { background: var(--accent); color: #000; font-weight: 700; }
+  .btn-connect:hover { background: var(--accent2); box-shadow: var(--glow); }
+  .btn-connect:disabled { opacity: 0.4; cursor: not-allowed; }
+  
+  .btn-stop { background: transparent; color: var(--hot); border: 1px solid var(--hot); }
+  .btn-stop:hover { background: rgba(239,68,68,.1); }
+  .btn-stop:disabled { opacity: .3; cursor: not-allowed; }
+  
+  .btn-start-cycle { background: var(--green); color: #000; font-weight: 700; }
+  .btn-start-cycle:hover { background: #16a34a; box-shadow: 0 0 14px rgba(34,197,94,0.4); }
+  .btn-start-cycle:disabled { opacity: .3; cursor: not-allowed; }
+  
+  .btn-send-mode {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--muted);
+    font-family: var(--mono); font-size: 11px; padding: 8px 14px; border-radius: 6px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn-send-mode:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-send-mode:disabled { opacity: 0.3; cursor: not-allowed; }
+  
+  /* ─────── MODE SELECTOR BAR ─────── */
+  .mode-bar {
+    display: flex; gap: 12px; margin-bottom: 20px; align-items: stretch;
+  }
+  
+  .mode-card {
+    flex: 1; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 18px; cursor: pointer; transition: all 0.22s; position: relative; overflow: hidden;
+  }
+  
+  .mode-card::before {
+    content: ''; position: absolute; inset: 0; opacity: 0; transition: opacity 0.22s; pointer-events: none;
+  }
+  .mode-card.m1::before { background: radial-gradient(ellipse at 50% 100%, rgba(249,115,22,0.12) 0%, transparent 70%); }
+  .mode-card.m2::before { background: radial-gradient(ellipse at 50% 100%, rgba(34,197,94,0.12) 0%, transparent 70%); }
+  .mode-card.m3::before { background: radial-gradient(ellipse at 50% 100%, rgba(56,189,248,0.12) 0%, transparent 70%); }
+  .mode-card.custom::before { background: radial-gradient(ellipse at 50% 100%, rgba(167,139,250,0.12) 0%, transparent 70%); }
+  
+  .mode-card:hover { border-color: var(--muted); }
+  .mode-card:hover::before { opacity: 1; }
+  
+  .mode-card.active.m1 { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .mode-card.active.m2 { border-color: var(--green); box-shadow: 0 0 0 1px var(--green); }
+  .mode-card.active.m3 { border-color: var(--cool); box-shadow: 0 0 0 1px var(--cool); }
+  .mode-card.active.custom { border-color: var(--ai-col); box-shadow: 0 0 0 1px var(--ai-col); }
+  
+  .mode-card.active::before { opacity: 1; }
+  
+  .mode-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 5px;
+    font-family: var(--mono); font-size: 12px; font-weight: 700; margin-bottom: 8px;
+  }
+  .m1 .mode-badge { background: rgba(249,115,22,0.2); color: var(--accent); }
+  .m2 .mode-badge { background: rgba(34,197,94,0.2); color: var(--green); }
+  .m3 .mode-badge { background: rgba(56,189,248,0.2); color: var(--cool); }
+  .custom .mode-badge { background: rgba(167,139,250,0.2); color: var(--ai-col); }
+  
+  .mode-name {
+    font-family: var(--sans); font-weight: 700; font-size: 13px;
+    color: var(--text); margin-bottom: 2px;
+  }
+  
+  .mode-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+  
+  .mode-specs {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  
+  .mode-spec-pill {
+    font-family: var(--mono); font-size: 10px; padding: 2px 7px; border-radius: 999px;
+    background: var(--bg3); border: 1px solid var(--border); color: var(--muted);
+  }
+  
+  .mode-card.active .mode-spec-pill { border-color: currentColor; }
+  .mode-card.active.m1 .mode-spec-pill { color: var(--accent); }
+  .mode-card.active.m2 .mode-spec-pill { color: var(--green); }
+  .mode-card.active.m3 .mode-spec-pill { color: var(--cool); }
+  .mode-card.active.custom .mode-spec-pill { color: var(--ai-col); }
+  
+  .mode-active-dot {
+    position: absolute; top: 10px; right: 10px; width: 8px; height: 8px;
+    border-radius: 50%; display: none;
+  }
+  .mode-card.active .mode-active-dot { display: block; }
+  .mode-card.active.m1 .mode-active-dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .mode-card.active.m2 .mode-active-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .mode-card.active.m3 .mode-active-dot { background: var(--cool); box-shadow: 0 0 6px var(--cool); }
+  .mode-card.active.custom .mode-active-dot { background: var(--ai-col); box-shadow: 0 0 6px var(--ai-col); }
+  
+  .mode-send-wrap {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 0 4px;
+  }
+  
+  .mode-send-hint { font-family: var(--mono); font-size: 9px; color: var(--border); text-align: center; }
+  
+  /* ─────── MODAL / CUSTOM MODE ─────── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(10,12,16,0.92); backdrop-filter: blur(6px); z-index: 200; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  
+  .modal {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+    width: 90%; max-width: 480px; padding: 28px; z-index: 201;
+  }
+  
+  .modal-title { font-weight: 800; font-size: 18px; margin-bottom: 20px; }
+  .modal-title span { color: var(--accent); }
+  
+  .form-group { margin-bottom: 18px; }
+  .form-label { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+  
+  .form-input {
+    width: 100%; padding: 10px 14px; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: 13px;
+    transition: border-color 0.2s;
+  }
+  .form-input:focus { outline: none; border-color: var(--accent); }
+  
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  
+  .modal-actions {
+    display: flex; gap: 10px; margin-top: 24px;
+  }
+  
+  .btn-modal { flex: 1; padding: 12px 16px; border-radius: 6px; border: none; cursor: pointer; font-family: var(--mono); font-size: 12px; transition: all 0.2s; }
+  .btn-modal-primary { background: var(--accent); color: #000; font-weight: 700; }
+  .btn-modal-primary:hover { background: var(--accent2); box-shadow: var(--glow); }
+  .btn-modal-cancel { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-modal-cancel:hover { border-color: var(--text); color: var(--text); }
+  
+  /* ─────── MAIN GRID ─────── */
+  .main-grid { display: grid; grid-template-columns: 280px 1fr 300px; gap: 14px; }
+  .left-col { display: flex; flex-direction: column; gap: 14px; }
+  .right-col { display: flex; flex-direction: column; gap: 14px; }
+  
+  .card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 18px;
+  }
+  
+  .card-label {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    letter-spacing: .12em; text-transform: uppercase; margin-bottom: 10px;
+  }
+  
+  /* ─────── TEMPERATURE DISPLAY ─────── */
+  .temp-card {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 24px 18px; position: relative; overflow: hidden;
+  }
+  
+  .temp-card::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 110%, rgba(249,115,22,.08) 0%, transparent 70% );
+    pointer-events: none;
+  }
+  
+  .temp-value {
+    font-family: var(--mono); font-size: 58px; font-weight: 400; line-height: 1;
+    color: var(--accent); text-shadow: var(--glow); transition: color .5s; letter-spacing: -2px;
+  }
+  .temp-value.cold { color: var(--cool); text-shadow: 0 0 20px rgba(56,189,248,.4); }
+  .temp-value.warm { color: var(--warm); text-shadow: 0 0 20px rgba(245,158,11,.4); }
+  .temp-value.hot  { color: var(--hot);  text-shadow: 0 0 20px rgba(239,68,68,.4); }
+  
+  .temp-unit { font-family: var(--mono); font-size: 18px; color: var(--muted); }
+  .temp-target { margin-top: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .temp-target span { color: var(--text); }
+  .temp-delta { margin-top: 4px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  
+  /* ─────── STATS ─────── */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .stat-label { font-family: var(--mono); font-size: 9px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 3px; }
+  .stat-value { font-family: var(--mono); font-size: 16px; color: var(--text); }
+  .stat-value.accent { color: var(--accent); }
+  
+  /* ─────── PHASES ─────── */
+  .phase-stages { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+  .phase-row {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
+    border: 1px solid transparent; transition: all .25s; font-family: var(--mono); font-size: 11px; color: var(--muted);
+  }
+  .phase-row.active { background: rgba(249,115,22,.08); border-color: rgba(249,115,22,.3); color: var(--accent); }
+  .phase-row.done { color: var(--green); }
+  .phase-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--border); flex-shrink: 0; transition: background .25s; }
+  .phase-row.active .phase-dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .phase-row.done .phase-dot { background: var(--green); }
+  .phase-temp { margin-left: auto; font-size: 10px; }
+  
+  /* ─────── LOG ─────── */
+  .log-card { height: 160px; display: flex; flex-direction: column; }
+  .log-body {
+    flex: 1; overflow-y: auto; font-family: var(--mono); font-size: 10px;
+    line-height: 1.9; color: var(--muted); margin-top: 6px;
+  }
+  .log-body::-webkit-scrollbar { width: 3px; }
+  .log-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .log-entry.warn  { color: var(--warm); }
+  .log-entry.fault { color: var(--hot); }
+  .log-entry.ok    { color: var(--green); }
+  .log-entry.info  { color: var(--cool); }
+  .log-entry.ai    { color: var(--ai-col); }
+  .log-ts { color: var(--border); margin-right: 6px; }
+  
+  /* ─────── CHART ─────── */
+  .chart-card { display: flex; flex-direction: column; padding: 18px 22px; }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .chart-title { font-weight: 700; font-size: 13px; }
+  .chart-legend { display: flex; gap: 14px; font-family: var(--mono); font-size: 10px; color: var(--muted); align-items: center; }
+  .legend-dot { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+  .chart-wrap { flex: 1; position: relative; min-height: 300px; }
+  
+  /* ─────── AI CARD ─────── */
+  .ai-card { border-color: rgba(167,139,250,.25); position: relative; overflow: hidden; }
+  .ai-card::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 0%, rgba(167,139,250,.06) 0%, transparent 65%); pointer-events: none; }
+  .ai-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .ai-metric { background: var(--bg3); border: 1px solid var(--border); border-radius: 7px; padding: 9px 11px; }
+  .ai-metric-label { font-family: var(--mono); font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 3px; }
+  .ai-metric-value { font-family: var(--mono); font-size: 20px; color: var(--ai-col); }
+  .ai-metric-value.good  { color: var(--green); }
+  .ai-metric-value.warn  { color: var(--warm); }
+  
+  .btn-ai-toggle {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--muted);
+    font-family: var(--mono); font-size: 11px; padding: 8px 14px; border-radius: 6px;
+    cursor: pointer; transition: all 0.2s; width: 100%;
+  }
+  .btn-ai-toggle:hover { border-color: var(--ai-col); color: var(--ai-col); }
+  .btn-ai-toggle.active { background: rgba(167,139,250,0.2); border-color: var(--ai-col); color: var(--ai-col); box-shadow: 0 0 8px rgba(167,139,250,0.3); }
+  .btn-ai-toggle:disabled { opacity: 0.3; cursor: not-allowed; }
+  
+  @media (max-width: 1200px) {
+    .main-grid { grid-template-columns: 1fr 300px; gap: 14px; }
+  }
+  
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .left-col { grid-row: 2; }
+    .right-col { grid-row: 2; }
+    .chart-card { grid-column: 1; }
+  }
+  
+  @media (max-width: 700px) {
+    .main-grid { grid-template-columns: 1fr; gap: 12px; }
+    .left-col { order: 1; }
+    .right-col { order: 2; grid-template-columns: 1fr 1fr; }
+    .chart-card { grid-column: 1 / -1; }
+    .mode-bar { flex-direction: row; }
+    .mode-card { flex: 1; }
+    .temp-value { font-size: 42px; }
+  }
+  
+  @media (max-width: 480px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .right-col { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: 1fr; }
+    .ai-metrics { grid-template-columns: 1fr; }
+    .temp-value { font-size: 36px; }
+    .mode-bar { flex-direction: column; }
+    .mode-card { flex: unset; width: 100%; }
+    .chart-wrap { min-height: 250px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="logo-title">FLUX <span>ION</span></div>
+      <div class="logo-sub">ESP32 ADAPTIVE REFLOW CONTROLLER // WEB MONITOR v4.2</div>
+    </div>
+    <div class="header-right">
+      <div class="status-pill">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">DISCONNECTED</span>
+      </div>
+      <button class="btn btn-start-cycle" id="btnStartCycle" disabled onclick="sendStart()">▶ START</button>
+      <button class="btn btn-stop" id="btnStop" disabled onclick="sendStop()">■ STOP</button>
+      <button class="btn btn-connect" id="btnConnect" onclick="toggleConnect()">CONNECT</button>
+    </div>
+  </header>
+
+  <!-- ═══ MODE SELECTOR BAR ═══ -->
+  <div class="mode-bar" id="modeBar">
+    <div class="mode-card m1 active" id="modeCard1" onclick="selectMode(1)">
+      <div class="mode-active-dot"></div>
+      <div class="mode-badge">M1</div>
+      <div class="mode-name">SAC305 · Lead-Free</div>
+      <div class="mode-sub">Standard Pb-Free</div>
+      <div class="mode-specs">
+        <span class="mode-spec-pill">Liq 183°C</span>
+        <span class="mode-spec-pill">Peak 240°C</span>
+      </div>
+    </div>
+    
+    <div class="mode-card m2" id="modeCard2" onclick="selectMode(2)">
+      <div class="mode-active-dot"></div>
+      <div class="mode-badge">M2</div>
+      <div class="mode-name">Sn63Pb37 · Leaded</div>
+      <div class="mode-sub">Standard Leaded</div>
+      <div class="mode-specs">
+        <span class="mode-spec-pill">Liq 183°C</span>
+        <span class="mode-spec-pill">Peak 210°C</span>
+      </div>
+    </div>
+    
+    <div class="mode-card m3" id="modeCard3" onclick="selectMode(3)">
+      <div class="mode-active-dot"></div>
+      <div class="mode-badge">M3</div>
+      <div class="mode-name">Bismuth · Low-Temp</div>
+      <div class="mode-sub">Sn42Bi58 / ChipQuik</div>
+      <div class="mode-specs">
+        <span class="mode-spec-pill">Liq 138°C</span>
+        <span class="mode-spec-pill">Peak 170°C</span>
+      </div>
+    </div>
+    
+    <div class="mode-card custom" id="modeCard4" onclick="selectMode(4)">
+      <div class="mode-active-dot"></div>
+      <div class="mode-badge">C</div>
+      <div class="mode-name">Custom Profile</div>
+      <div class="mode-sub">User Defined</div>
+      <div class="mode-specs">
+        <span class="mode-spec-pill" onclick="showCustomModal(event)" style="cursor:pointer;">⚙ Configure</span>
+      </div>
+    </div>
+    
+    <div class="mode-send-wrap">
+      <button class="btn-send-mode" id="btnSendMode" disabled onclick="sendMode()">↑ SEND</button>
+      <div class="mode-send-hint">mode via<br>serial</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+      <div class="card temp-card">
+        <div class="card-label">Actual Temperature</div>
+        <div style="display:flex;align-items:baseline;gap:5px;margin:6px 0">
+          <span class="temp-value" id="tempDisplay">--.-</span>
+          <span class="temp-unit">°C</span>
+        </div>
+        <div class="temp-target">Target: <span id="targetDisplay">--</span> °C</div>
+        <div class="temp-delta" id="deltaDisplay"></div>
+      </div>
+
+      <div class="card" style="padding:13px 14px">
+        <div class="card-label">Live Stats</div>
+        <div class="stats-grid">
+          <div class="stat-box"><div class="stat-label">Elapsed</div><div class="stat-value accent" id="elapsedDisplay">0s</div></div>
+          <div class="stat-box"><div class="stat-label">SSR Duty</div><div class="stat-value" id="outputDisplay">0%</div></div>
+          <div class="stat-box"><div class="stat-label">Kp / Ki / Kd</div><div class="stat-value" id="pidDisplay" style="font-size:12px">—</div></div>
+          <div class="stat-box"><div class="stat-label">Phase</div><div class="stat-value accent" id="phaseDisplay">IDLE</div></div>
+        </div>
+      </div>
+
+      <div class="card"><div class="card-label">Profile Stages</div><div class="phase-stages" id="phaseStages"></div></div>
+      <div class="card log-card"><div class="card-label">Serial Log</div><div class="log-body" id="logBody"></div></div>
+    </div>
+
+    <!-- CHART -->
+    <div class="card chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Temperature vs. Time</div>
+        <div class="chart-legend">
+          <span><span class="legend-dot" style="background:var(--accent)"></span>Actual</span>
+          <span><span class="legend-dot" style="background:var(--muted);opacity:.5"></span>Target</span>
+          <span style="color:var(--border)">|</span>
+          <span id="runPointCount" style="color:var(--muted)">0 pts</span>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="mainChart"></canvas></div>
+    </div>
+
+    <!-- RIGHT COLUMN — AI PANEL -->
+    <div class="right-col">
+      <div class="card ai-card">
+        <div class="card-label" style="color: var(--ai-col); display: flex; justify-content: space-between; align-items: center;">
+          ⚡ Adaptive AI Controller
+          <button class="btn-ai-toggle" id="btnAIToggle" onclick="toggleAI()" disabled>AI: OFF</button>
+        </div>
+        <div class="ai-metrics">
+          <div class="ai-metric"><div class="ai-metric-label">AI Status</div><div class="ai-metric-value" id="aiStatus">OFFLINE</div></div>
+          <div class="ai-metric"><div class="ai-metric-label">Overshoot</div><div class="ai-metric-value" id="aiOvershoot">—</div></div>
+          <div class="ai-metric"><div class="ai-metric-label">Avg Error</div><div class="ai-metric-value" id="aiError">—</div></div>
+          <div class="ai-metric"><div class="ai-metric-label">Correction</div><div class="ai-metric-value" id="aiCorrection">0ms</div></div>
+        </div>
+        <div style="font-family: var(--mono); font-size: 10px; color: var(--muted); line-height: 1.6; padding: 10px; background: var(--bg3); border-radius: 6px; border: 1px solid var(--border);">
+          5-Rule Adaptive Heuristic: Ramp Boost • Overshoot Brake • Soak Drift • Pre-Peak Limiter • Learned Bias
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-grid -->
+
+</div><!-- /wrap -->
+
+<!-- CUSTOM MODE MODAL -->
+<div class="modal-overlay" id="customModalOverlay">
+  <div class="modal">
+    <div class="modal-title">Create <span>Custom</span> Mode</div>
+    
+    <div class="form-group">
+      <label class="form-label">Profile Name</label>
+      <input type="text" class="form-input" id="customName" placeholder="e.g., MyProfile">
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Liquidus Temp (°C)</label>
+        <input type="number" class="form-input" id="customLiq" placeholder="183" min="100" max="300">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Peak Temp (°C)</label>
+        <input type="number" class="form-input" id="customPeak" placeholder="240" min="100" max="300">
+      </div>
+    </div>
+    
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-primary" onclick="saveCustomMode()">SAVE & SELECT</button>
+      <button class="btn-modal btn-modal-cancel" onclick="closeCustomModal()">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  MODES DATA ✅ WITH MODE-SPECIFIC WAYPOINTS
+// ══════════════════════════════════════════════════════════════
+const MODES = {
+  1: { 
+    name: 'SAC305', liquidus: 183, peakTemp: 240, chartYMax: 270,
+    waypoints: [
+      { label: 'START',    temp: 25  },
+      { label: 'PREHEAT',  temp: 150 },
+      { label: 'SOAK 1',   temp: 165 },
+      { label: 'SOAK 2',   temp: 185 },
+      { label: 'PEAK',     temp: 240 },
+      { label: 'COOLING',  temp: 25  },
+    ]
+  },
+  2: { 
+    name: 'Sn63Pb37', liquidus: 183, peakTemp: 210, chartYMax: 250,
+    waypoints: [
+      { label: 'START',    temp: 25  },
+      { label: 'PREHEAT',  temp: 150 },
+      { label: 'SOAK 1',   temp: 165 },
+      { label: 'SOAK 2',   temp: 183 },
+      { label: 'PEAK',     temp: 210 },
+      { label: 'COOLING',  temp: 25  },
+    ]
+  },
+  3: { 
+    name: 'LowTemp', liquidus: 138, peakTemp: 170, chartYMax: 210,
+    waypoints: [
+      { label: 'START',    temp: 25  },
+      { label: 'PREHEAT',  temp: 100 },
+      { label: 'SOAK 1',   temp: 130 },
+      { label: 'SOAK 2',   temp: 138 },
+      { label: 'PEAK',     temp: 170 },
+      { label: 'COOLING',  temp: 25  },
+    ]
+  },
+  4: { 
+    name: 'Custom', liquidus: 183, peakTemp: 240, chartYMax: 270,
+    waypoints: [
+      { label: 'START',    temp: 25  },
+      { label: 'PREHEAT',  temp: 150 },
+      { label: 'SOAK 1',   temp: 150 },
+      { label: 'SOAK 2',   temp: 183 },
+      { label: 'PEAK',     temp: 240 },
+      { label: 'COOLING',  temp: 25  },
+    ]
+  }
+};
+
+let currentWAYPOINTS = MODES[1].waypoints;  // ✅ Variable waypoints
+
+let currentMode = 1;
+let customMode = { liquidus: 183, peakTemp: 240, name: 'Custom' };
+
+// ══════════════════════════════════════════════════════════════
+//  MODE SELECTION
+// ══════════════════════════════════════════════════════════════
+function selectMode(m) {
+  if (connected && runActive) {
+    addLog('Cannot change mode while run is active', 'fault');
+    return;
+  }
+  currentMode = m;
+  currentWAYPOINTS = MODES[m].waypoints;  // ✅ SWAP WAYPOINTS
+  
+  [1,2,3,4].forEach(i => {
+    document.getElementById('modeCard' + i).classList.toggle('active', i === m);
+  });
+  
+  // ✅ REFRESH PHASES
+  renderPhaseStages(0);
+  
+  // ✅ UPDATE CHART Y-AXIS
+  mainChart.options.scales.y.max = MODES[m].chartYMax;
+  mainChart.update('none');
+  
+  const modeName = m === 4 ? `${customMode.name} (Liq: ${customMode.liquidus}°C, Peak: ${customMode.peakTemp}°C)` : `${MODES[m].name} (Liq: ${MODES[m].liquidus}°C, Peak: ${MODES[m].peakTemp}°C)`;
+  addLog(`Mode → M${m} ${modeName}`, 'info');
+}
+
+function showCustomModal(e) {
+  e.stopPropagation();
+  document.getElementById('customName').value = customMode.name;
+  document.getElementById('customLiq').value = customMode.liquidus;
+  document.getElementById('customPeak').value = customMode.peakTemp;
+  document.getElementById('customModalOverlay').classList.add('show');
+}
+
+function closeCustomModal() {
+  document.getElementById('customModalOverlay').classList.remove('show');
+}
+
+function saveCustomMode() {
+  const name = document.getElementById('customName').value.trim() || 'Custom';
+  const liq = parseInt(document.getElementById('customLiq').value) || 183;
+  const peak = parseInt(document.getElementById('customPeak').value) || 240;
+  
+  if (liq >= peak) {
+    addLog('Liquidus must be less than peak temperature', 'fault');
+    return;
+  }
+  
+  customMode = { name, liquidus: liq, peakTemp: peak };
+  
+  // ✅ Calculate dynamic temps based on liquidus
+  const preheat = Math.round(liq * 0.7);      // 70% of liquidus
+  const soak1 = Math.round(liq - 33);         // Typical offset
+  const soak2 = liq;                           // At liquidus
+  
+  MODES[4] = { 
+    name, liquidus: liq, peakTemp: peak, chartYMax: peak + 30,
+    waypoints: [
+      { label: 'START', temp: 25 },
+      { label: 'PREHEAT', temp: preheat },     // ✅ Dynamic based on liquidus
+      { label: 'SOAK 1', temp: soak1 },
+      { label: 'SOAK 2', temp: soak2 },
+      { label: 'PEAK', temp: peak },
+      { label: 'COOLING', temp: 25 }
+    ]
+  };
+  
+  const pellSpecs = document.querySelector('.mode-card.custom .mode-specs');
+  pellSpecs.innerHTML = `<span class="mode-spec-pill">Liq ${liq}°C</span><span class="mode-spec-pill">Peak ${peak}°C</span><span class="mode-spec-pill" onclick="showCustomModal(event)" style="cursor:pointer;">⚙ Edit</span>`;
+  
+  selectMode(4);  // ✅ Will refresh phases + chart
+  closeCustomModal();
+  addLog(`Custom mode saved: ${name} (Liq: ${liq}°C, Peak: ${peak}°C)`, 'ok');
+}
+
+async function sendMode() {
+  if (!port) return;
+  try {
+    const enc = new TextEncoder();
+    const w = port.writable.getWriter();
+    await w.write(enc.encode(`mode${currentMode}\n`));
+    // FIX-D6: if custom mode, also send the liquidus/peak values
+    if (currentMode === 4) {
+      await w.write(enc.encode(`custom:${customMode.liquidus}:${customMode.peakTemp}\n`));
+    }
+    w.releaseLock();
+    const md = currentMode === 4 ? customMode : MODES[currentMode];
+    addLog(`→ mode${currentMode} sent (${md.name})`, 'info');
+    if (currentMode === 4) addLog(`→ custom:${customMode.liquidus}:${customMode.peakTemp} sent`, 'info');
+  } catch(e) {
+    addLog('Send error: ' + e.message, 'fault');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  AI TOGGLE  (FIX-D1)
+//  toggleAI() was sending "ai:0" or "ai:1" — but the ESP32
+//  protocol expects "ai:±NNN" where NNN is a ms correction value.
+//  "ai:1" sets correction=1ms (harmless but useless).
+//  Fix: toggling AI now sends "ai:0" to zero out correction on
+//  the ESP32 (disabling effect), and re-enables the JS-side AI
+//  computation which will send real corrections on next tick.
+// ══════════════════════════════════════════════════════════════
+let aiEnabled = false;
+let aiLastCorrection = 0;  // tracks last value sent to ESP32
+
+function setAIStatus(enabled) {
+  aiEnabled = enabled;
+  const btn = document.getElementById('btnAIToggle');
+  const status = document.getElementById('aiStatus');
+  if (enabled) {
+    btn.classList.add('active');
+    btn.textContent = 'AI: ON';
+    status.textContent = 'ACTIVE';
+    status.style.color = 'var(--green)';
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = 'AI: OFF';
+    status.textContent = 'OFFLINE';
+    status.style.color = 'var(--muted)';
+  }
+}
+
+async function sendAICorrection(corrMs) {
+  // FIX-D1: send actual ms correction value, not 0/1 toggle flag
+  if (!port || !connected) return;
+  try {
+    const w = port.writable.getWriter();
+    const sign = corrMs >= 0 ? '+' : '';
+    await w.write(new TextEncoder().encode(`ai:${sign}${Math.round(corrMs)}\n`));
+    w.releaseLock();
+    aiLastCorrection = corrMs;
+  } catch(e) { /* non-fatal */ }
+}
+
+async function toggleAI() {
+  if (!connected) { addLog('Not connected to ESP32', 'fault'); return; }
+  if (aiEnabled) {
+    setAIStatus(false);
+    await sendAICorrection(0);  // zero out correction on ESP32
+    addLog('→ AI disabled — sent ai:0 to ESP32', 'warn');
+  } else {
+    setAIStatus(true);
+    addLog('→ AI enabled — corrections will resume', 'info');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════════
+let port = null, reader = null;
+let connected = false;
+let runActive = false;
+let runData = [];
+let startTime = Date.now();
+let totalElapsed = 0;
+
+// ══════════════════════════════════════════════════════════════
+//  CHART SETUP
+// ══════════════════════════════════════════════════════════════
+const chartCtx = document.getElementById('mainChart').getContext('2d');
+const mainChart = new Chart(chartCtx, {
+  type: 'line',
+  data: { datasets: [
+    {
+      label: 'Actual', data: [], borderColor: '#f97316', borderWidth: 2,
+      pointRadius: 0, tension: 0.3, fill: { target: 'origin', above: 'rgba(249,115,22,0.04)' }
+    },
+    {
+      label: 'Target', data: [], borderColor: '#334155', borderWidth: 1.5,
+      borderDash: [5, 4], pointRadius: 0, tension: 0, fill: false,
+    }
+  ]},
+  options: {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      x: {
+        type: 'linear',
+        title: { display: true, text: 'Time (s)', color: '#475569', font: { family: "'Share Tech Mono'" } },
+        grid: { color: '#1e2535' },
+        ticks: { color: '#475569', font: { family: "'Share Tech Mono'", size: 11 } }
+      },
+      y: {
+        min: 0, max: 270,
+        title: { display: true, text: 'Temperature (°C)', color: '#475569', font: { family: "'Share Tech Mono'" } },
+        grid: { color: '#1e2535' },
+        ticks: { color: '#475569', font: { family: "'Share Tech Mono'", size: 11 }, callback: v => v + '°' }
+      }
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#181d2a', borderColor: '#1e2535', borderWidth: 1,
+        titleFont: { family: "'Share Tech Mono'" },
+        bodyFont: { family: "'Share Tech Mono'", size: 12 },
+        callbacks: {
+          title: items => `t = ${items[0].parsed.x}s`,
+          label: item => `${item.dataset.label}: ${item.parsed.y.toFixed(2)}°C`
+        }
+      }
+    }
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  PHASE STAGES ✅ WITH ACTIVE/DONE CSS CLASSES
+// ══════════════════════════════════════════════════════════════
+function renderPhaseStages(activeWP = 0) {
+  const el = document.getElementById('phaseStages');
+  el.innerHTML = currentWAYPOINTS.map((wp, i) => {
+    const cls = i < activeWP ? 'done' : i === activeWP ? 'active' : '';
+    return `<div class="phase-row ${cls}"><div class="phase-dot"></div><span>${wp.label}</span><span class="phase-temp">${wp.temp}°C</span></div>`;
+  }).join('');
+}
+renderPhaseStages();
+
+// ══════════════════════════════════════════════════════════════
+//  SERIAL CONNECT
+// ══════════════════════════════════════════════════════════════
+if (!('serial' in navigator)) {
+  addLog('Web Serial API not available. Use Chrome or Edge (desktop).', 'warn');
+  document.getElementById('btnConnect').disabled = true;
+  document.getElementById('btnConnect').textContent = 'NO SERIAL';
+}
+
+async function toggleConnect() {
+  if (connected) { await disconnect(); return; }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    connected = true;
+    runActive = false;  // FIX-D2: was true on connect — now set false until first data arrives
+    startTime = Date.now();
+    runData = [];
+    totalElapsed = 0;
+    mainChart.data.datasets[0].data = [];
+    mainChart.data.datasets[1].data = [];
+    mainChart.update();
+    
+    setStatus('live', 'CONNECTED');
+    document.getElementById('btnConnect').textContent = 'DISCONNECT';
+    document.getElementById('btnStop').disabled = false;
+    document.getElementById('btnSendMode').disabled = false;
+    document.getElementById('btnAIToggle').disabled = false;  // ✅ Enable AI toggle when connected
+    document.getElementById('btnStartCycle').disabled = false;
+    addLog('Serial connected @ 115200 baud ✓', 'ok');
+    addLog(`Active mode: M${currentMode}`, 'info');
+    readLoop();
+  } catch(e) {
+    addLog('Connect error: ' + e.message, 'fault');
+  }
+}
+
+async function disconnect() {
+  connected = false;  // ✅ Set immediately to break readLoop
+  runActive = false;
+  
+  try {
+    if (reader) { 
+      await reader.cancel();  // ✅ This will interrupt pending read()
+      reader = null; 
+    }
+  } catch(e) {}
+  
+  try {
+    if (port) { 
+      await port.close(); 
+      port = null; 
+    }
+  } catch(e) {}
+  
+  setStatus('', 'DISCONNECTED');
+  document.getElementById('btnConnect').textContent = 'CONNECT';
+  document.getElementById('btnStop').disabled = true;
+  document.getElementById('btnSendMode').disabled = true;
+  document.getElementById('btnAIToggle').disabled = true;
+  document.getElementById('btnStartCycle').disabled = true;
+  addLog('Disconnected', 'warn');
+}
+
+async function sendStop() {
+  if (!port) return;
+  try {
+    const enc = new TextEncoder();
+    const w = port.writable.getWriter();
+    await w.write(enc.encode('stop\n'));
+    w.releaseLock();
+    addLog('→ stop command sent', 'warn');
+    runActive = false;
+  } catch(e) {
+    addLog('Send error: ' + e.message, 'fault');
+  }
+}
+
+async function sendStart() {
+  if (!port) return;
+  try {
+    const enc = new TextEncoder();
+    const w = port.writable.getWriter();
+    await w.write(enc.encode('start\n'));
+    w.releaseLock();
+    addLog('→ start command sent', 'ok');
+  } catch(e) {
+    addLog('Send error: ' + e.message, 'fault');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  READ LOOP
+// ══════════════════════════════════════════════════════════════
+let lineBuffer = '';
+
+async function readLoop() {
+  const dec = new TextDecoder();
+  try {
+    while (connected && port && port.readable) {
+      reader = port.readable.getReader();
+      try {
+        while (connected) {  // ✅ Check connected flag in inner loop
+          const { value, done } = await reader.read();
+          if (done || !connected) break;  // ✅ Exit if disconnecting
+          if (value) {
+            lineBuffer += dec.decode(value, { stream: true });
+            const lines = lineBuffer.split('\n');
+            lineBuffer = lines.pop() || '';
+            lines.forEach(line => { if (line.trim()) parseLine(line.trim()); });
+          }
+        }
+      } finally { 
+        try { reader.releaseLock(); } catch(e) {}
+      }
+      if (!connected) break;  // ✅ Exit outer loop if disconnected
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError' && connected) {
+      addLog('Read error: ' + e.message, 'fault');
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  LINE PARSER
+// ══════════════════════════════════════════════════════════════
+let currentWP = 0;
+
+// Simple JS-side AI correction helper (lightweight, dashboard-side)
+// Returns a correction in ms based on error + phase. Sent to ESP32 via ai:±NNN.
+// This augments the firmware's own 5-rule AI, not replaces it.
+function computeSimpleAICorrection(actual, target, phase, wp) {
+  const error = target - actual;
+  if (phase === 'COOLING' || phase === 'DONE' || phase === 'IDLE' || wp === 5) return 0;
+  if (actual > target + 3) return Math.max(-350, -(actual - target) * 55);  // overshoot brake
+  if (phase === 'RAMP' && error > 10) return Math.min(300, error * 8);       // ramp boost
+  if (phase === 'SOAK' && Math.abs(error) > 4) return Math.max(-100, Math.min(100, error * 15)); // soak nudge
+  return 0;
+}
+
+function parseLine(line) {
+  if (!line || line.length < 3) return;
+  if (/[\x00-\x08\x0e-\x1f\x80-\xff]/.test(line)) return;
+
+  // FIX-D4: clean single condition
+  if (line.startsWith('Target:')) {
+    if (line.includes('Phase:IDLE') && line.includes('t:0') && line.includes('Actual:0')) return;
+
+    const m = {};
+    line.split(',').forEach(p => {
+      const idx = p.indexOf(':');
+      if (idx > 0) { m[p.substring(0,idx).trim()] = p.substring(idx+1).trim(); }
+    });
+
+    const actual  = parseFloat(m['Actual'] ?? NaN);
+    const target  = parseFloat(m['Target'] ?? NaN);
+    const kp      = parseFloat(m['Kp']  ?? 0);
+    const ki      = parseFloat(m['Ki']  ?? 0);
+    const kd      = parseFloat(m['Kd']  ?? 0);
+    const out     = parseFloat(m['Out'] ?? 0);
+    const ssr     = parseFloat(m['SSR'] ?? (out/20));
+    const phase   = (m['Phase'] || '').toUpperCase();
+    const wp      = parseInt(m['WP']  ?? 0);
+    const aiActFw = parseInt(m['AI_Active'] ?? 0);
+    const aiCorrFw= parseInt(m['AI_Corr']   ?? 0);
+    const tFirm   = parseInt(m['t'] ?? -1);
+
+    if (isNaN(actual) || isNaN(target)) return;
+    if (actual < 0.5 && target < 1) return;
+
+    // FIX-D2: runActive only on first real data point
+    if (!runActive && actual > 5) {
+      runActive = true;
+      addLog('Run started — data streaming', 'ok');
+    }
+    if (!runActive) return;
+
+    if (tFirm >= 0) totalElapsed = tFirm; else totalElapsed++;
+
+    // FIX-D7: store wp and aiCorr for CSV export
+    runData.push({ t: totalElapsed, actual, target, phase, wp, kp, ki, kd, out, ssr, aiCorr: aiCorrFw });
+
+    mainChart.data.datasets[0].data.push({ x: totalElapsed, y: actual });
+    mainChart.data.datasets[1].data.push({ x: totalElapsed, y: target });
+    mainChart.update('none');
+
+    updateTempDisplay(actual, target);
+    document.getElementById('elapsedDisplay').textContent   = totalElapsed + 's';
+    document.getElementById('outputDisplay').textContent    = ssr.toFixed(0) + '%';
+    document.getElementById('pidDisplay').textContent       = `${kp.toFixed(0)}/${ki.toFixed(2)}/${kd.toFixed(0)}`;
+    document.getElementById('phaseDisplay').textContent     = phase || 'IDLE';
+    document.getElementById('runPointCount').textContent    = runData.length + ' pts';
+
+    // Sync AI panel from firmware telemetry
+    if (aiActFw) setAIStatus(true);
+    document.getElementById('aiCorrection').textContent = aiCorrFw + 'ms';
+    const errorVal  = Math.abs(actual - target);
+    const overshoot = actual > target ? (actual - target) : 0;
+    document.getElementById('aiError').textContent     = errorVal.toFixed(1) + '°C';
+    document.getElementById('aiOvershoot').textContent = overshoot.toFixed(1) + '°C';
+
+    // FIX-D1: compute and send real AI correction from dashboard
+    if (aiEnabled && connected && phase !== 'COOLING' && phase !== 'DONE') {
+      const jsCorr = computeSimpleAICorrection(actual, target, phase, wp);
+      if (Math.abs(jsCorr - aiLastCorrection) > 20) sendAICorrection(jsCorr);
+    }
+
+    if (wp !== currentWP) {
+      currentWP = wp;
+      renderPhaseStages(wp);  // FIX-D3: removed erroneous +1 offset
+    }
+    return;
+  }
+
+  // FIX-D8: expanded event detection for all states
+  let logClass = 'info';
+  if (line.includes('[WARN]') || line.includes('[ADV]'))      logClass = 'warn';
+  if (line.includes('[FAULT]') || line.includes('[SAFETY]'))  { logClass = 'fault'; setStatus('fault', 'FAULT'); }
+  if (line.includes('[SOAK]'))   logClass = 'info';
+  if (line.includes('[COOL]') || line.includes('COOLING'))    logClass = 'info';
+  if (line.includes('[DONE]') || line.includes('Cycle complete')) {
+    logClass = 'ok'; runActive = false;
+    addLog('Run finished — data saved', 'ok');
+  }
+  if (line.includes('[ABORT]')) { logClass = 'warn'; runActive = false; }
+  addLog(line, logClass);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  UI HELPERS
+// ══════════════════════════════════════════════════════════════
+function updateTempDisplay(actual, target) {
+  const el = document.getElementById('tempDisplay');
+  el.textContent = actual.toFixed(1);
+  el.className = 'temp-value';
+  if (actual < 60) el.classList.add('cold');
+  else if (actual < 180) el.classList.add('warm');
+  else el.classList.add('hot');
+  
+  document.getElementById('targetDisplay').textContent = target.toFixed(0);
+  const delta = actual - target;
+  const dEl = document.getElementById('deltaDisplay');
+  dEl.textContent = `Δ ${delta > 0 ? '+' : ''}${delta.toFixed(1)}°C`;
+  dEl.style.color = Math.abs(delta) < 5 ? '#22c55e' : Math.abs(delta) < 15 ? '#f59e0b' : '#ef4444';
+}
+
+function setStatus(cls, text) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot' + (cls ? ' ' + cls : '');
+  document.getElementById('statusText').textContent = text;
+}
+
+let logCount = 0;
+function addLog(msg, cls = '') {
+  const now = new Date();
+  const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  const el = document.getElementById('logBody');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + cls;
+  entry.innerHTML = `<span class="log-ts">${ts}</span>${msg.replace(/</g,'&lt;').replace(/>/g,'&gt;')}`;
+  el.appendChild(entry);
+  if (++logCount > 200) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  CSV EXPORT
+// ══════════════════════════════════════════════════════════════
+function exportCSV() {
+  if (!runData.length) { addLog('No run data to export', 'warn'); return; }
+  // FIX-D7: include waypoint, SSR%, and AI correction in export
+  const header = 'time_s,actual_c,target_c,phase,waypoint,kp,ki,kd,ssr_pct,ssr_out_raw,ai_corr_ms\n';
+  const rows = runData.map(d =>
+    `${d.t ?? ''},${d.actual.toFixed(2)},${d.target.toFixed(1)},${d.phase},${d.wp ?? ''},${d.kp},${d.ki},${d.kd},${(d.ssr??0).toFixed(1)},${d.out},${d.aiCorr ?? 0}`
+  ).join('\n');
+  const blob = new Blob([header + rows], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+  a.href = url; a.download = `reflow_run_${ts}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  addLog(`Exported ${runData.length} rows → ${a.download}`, 'ok');
+}
+
+// Init
+addLog('Dashboard ready. Click CONNECT to link ESP32 via USB.', 'info');
+if (!('serial' in navigator)) addLog('⚠ Web Serial API requires Chrome or Edge (desktop)', 'warn');
+</script>
+</body>
+</html>
