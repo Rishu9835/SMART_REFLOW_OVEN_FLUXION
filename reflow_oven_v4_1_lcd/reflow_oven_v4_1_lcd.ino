@@ -1,37 +1,4 @@
-/*
- * ============================================================
- *  VIDHYUT RAKSHAK — REFLOW OVEN CONTROLLER  v4.1-LCD
- *  ESP32 + MAX31855 Thermocouple + 3 Buttons + 16×2 I2C LCD
- *
- *  LCD DISPLAY LAYOUT
- *  ─────────────────
- *  MODE SELECT screen:
- *    Line 1: [M1] SAC305
- *    Line 2: >START  ABT  <<MODE
- *
- *  IDLE screen (after mode confirmed):
- *    Line 1: CT=xxx.x C  M1
- *    Line 2: >START  ABT  CHG
- *
- *  RUNNING screen:
- *    Line 1: CT=xxx.x PREHEAT
- *    Line 2: >ABORT    t+xxxs
- *
- *  COOLING screen:
- *    Line 1: CT=xxx.x COOLING
- *    Line 2: Fan ON  Wait...
- *
- *  DONE screen:
- *    Line 1: CT=xxx.x  DONE!
- *    Line 2: >START again  CHG
- *
- *  FAULT screen:
- *    Line 1: !! FAULT !!
- *    Line 2: >ABT  Check TC
- *
- *  DOUBLE-CLICK on MODE button cycles through modes M1→M2→M3→M4→M1
- * ============================================================
- */
+
 
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
@@ -41,20 +8,20 @@
 #define PLOTTER_MODE 0
 #define DLOG(x) do { if (!PLOTTER_MODE) { x; } } while(0)
 
-// ── LCD (I2C) ─────────────────────────────────────────────────
-// Default I2C address is 0x27; change to 0x3F if needed
+//LCD 
+
 #define LCD_ADDR  0x27
 #define LCD_COLS  16
 #define LCD_ROWS   2
 LiquidCrystal_I2C lcd(LCD_ADDR, LCD_COLS, LCD_ROWS);
 
-// ── THERMOCOUPLE (VSPI) ───────────────────────────────────────
+//THERMOCOUPLE (VSPI)
 #define MAXDO    19
 #define MAXCS     5
 #define MAXCLK   18
 Adafruit_MAX31855 thermocouple(MAXCLK, MAXCS, MAXDO);
 
-// ── OTHER HARDWARE ────────────────────────────────────────────
+
 #define SSR_PIN   4
 #define FAN_PIN  25
 #define BTN_START  26
@@ -65,9 +32,7 @@ Adafruit_MAX31855 thermocouple(MAXCLK, MAXCS, MAXDO);
 #define FAN_LEDC_FREQ  25000
 #define FAN_LEDC_BITS  8
 
-// ═════════════════════════════════════════════════════════════
-//  MULTI-MODE PROFILE DATA
-// ═════════════════════════════════════════════════════════════
+//MODES
 const int NUM_POINTS = 6;
 
 const float modeTemps[3][NUM_POINTS] = {
@@ -110,7 +75,6 @@ int   waypointSoak[NUM_POINTS];
 int   waypointTimeout[NUM_POINTS];
 uint8_t selectedMode = 1;
 
-// ── Safe accessors (mode 1–4, arrays 0-indexed 0–2) ──────────
 const char* getModeName() {
   if (selectedMode >= 1 && selectedMode <= 3) return modeNames[selectedMode - 1];
   return customModeName;
@@ -128,16 +92,16 @@ float getModeOverTemp() {
   return customPeakTemp + 40.0;
 }
 
-// ── SSR ───────────────────────────────────────────────────────
+//SSR
 const int WINDOW_MS = 2000;
 
-// ── GLITCH FILTER ─────────────────────────────────────────────
+//GLITCH FILTER
 const float GLITCH_ZERO_MAX   = 5.0;
 const float GLITCH_RATE_HEAT  = 15.0;
 const float GLITCH_RATE_COOL  = 35.0;
 const int   GLITCH_MAX_CONSEC = 3;
 
-// ── STATE ─────────────────────────────────────────────────────
+//STATES
 enum CycleState { IDLE, RAMPING, SOAKING, COOLING_DOWN, DONE, FAULT };
 CycleState cycleState = IDLE;
 
@@ -165,14 +129,14 @@ unsigned long lastPrintTime     = 0;
 unsigned long waypointStartTime = 0;
 unsigned long cycleStartTime    = 0;
 
-// ── LCD UPDATE ────────────────────────────────────────────────
+//LCD UPDATE
 unsigned long lastLcdUpdate  = 0;
 bool          lcdNeedsRedraw = true;
 // Track last drawn strings so we only update changed chars
 char lcdLine0[17] = "";
 char lcdLine1[17] = "";
 
-// ── BUTTONS ───────────────────────────────────────────────────
+//BUTTONS
 struct Btn {
   uint8_t pin;
   bool    lastState;
@@ -187,15 +151,15 @@ Btn btnAbort = {BTN_ABORT, HIGH, false, 0, 0, 0};
 Btn btnMode  = {BTN_MODE,  HIGH, false, 0, 0, 0};
 
 #define DEBOUNCE_MS      40
-#define DBLCLICK_MS     400   // max gap between two clicks for double-click
+#define DBLCLICK_MS     400   //max gap between two clicks for double-click
 
 bool idleReady    = false;
 bool modeDblClick = false;    // set when MODE double-clicked
 
-// ── PID ───────────────────────────────────────────────────────
+//PID
 struct PIDGains { double Kp, Ki, Kd; };
 
-// ── AI STATE ──────────────────────────────────────────────────
+//AI CORRECTION
 double        aiCorrection    = 0.0;
 double        aiCorrectionInt = 0.0;
 unsigned long aiCorrLastRx    = 0;
@@ -206,7 +170,7 @@ const double        AI_RAMP_STEP    = 5.0;
 int                 aiErrorCount    = 0;
 bool                aiActive        = true;
 
-// ── FORWARD DECLARATIONS ──────────────────────────────────────
+//FORWARD DECLARATIONS
 void setSSR(bool on);
 void setFan(int speed);
 void advanceWaypoint(const char* reason);
@@ -221,9 +185,7 @@ void loadProfile(int modeIdx);
 void logSerial(float temp);
 PIDGains getZoneGains(float temp, float setpoint);
 
-// ─────────────────────────────────────────────────────────────
-//  LCD HELPER — only writes when content changes to avoid flicker
-// ─────────────────────────────────────────────────────────────
+
 void lcdPrint(uint8_t row, const char* text) {
   // Pad to 16 chars
   char padded[17];
@@ -236,9 +198,7 @@ void lcdPrint(uint8_t row, const char* text) {
   lcd.print(padded);
 }
 
-// ─────────────────────────────────────────────────────────────
-//  LOAD PROFILE
-// ─────────────────────────────────────────────────────────────
+//LOAD PROFILE
 void loadProfile(int m) {
   if (m >= 0 && m < 3) {
     for (int i = 0; i < NUM_POINTS; i++) {
@@ -263,9 +223,7 @@ void loadProfile(int m) {
   }
 }
 
-// ═════════════════════════════════════════════════════════════
-//  SETUP
-// ═════════════════════════════════════════════════════════════
+//SETUP
 void setup() {
   Serial.begin(115200);
   delay(300);
@@ -273,7 +231,7 @@ void setup() {
   esp_task_wdt_init(12, true);
   esp_task_wdt_add(NULL);
 
-  // ── Hardware init ─────────────────────────────────────────
+  //Hardware init
   pinMode(SSR_PIN, OUTPUT);
   digitalWrite(SSR_PIN, LOW);
   ledcSetup(FAN_LEDC_CH, FAN_LEDC_FREQ, FAN_LEDC_BITS);
@@ -284,7 +242,7 @@ void setup() {
   pinMode(BTN_ABORT, INPUT_PULLUP);
   pinMode(BTN_MODE,  INPUT_PULLUP);
 
-  // ── LCD init ──────────────────────────────────────────────
+  //LCD init
   Wire.begin();           // SDA=21, SCL=22 default on ESP32
   lcd.init();
   lcd.backlight();
@@ -327,16 +285,15 @@ void setup() {
   Serial.println(F("Commands: stop|status|mode1-4|custom:Liq:Peak|ai:+NNN|ai_status"));
 }
 
-// ═════════════════════════════════════════════════════════════
-//  LOOP
-// ═════════════════════════════════════════════════════════════
+
+//LOOP
 void loop() {
   esp_task_wdt_reset();
 
   updateButtons();
   handleButtons();
 
-  // ── SERIAL COMMANDS ──────────────────────────────────────
+  //SERIAL COMMANDS
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
@@ -396,7 +353,7 @@ void loop() {
 
   unsigned long now = millis();
 
-  // ── HOT-BOOT COOLDOWN ─────────────────────────────────────
+//COOLDOWN
   if (!isRunning && fanForced && !selectingMode) {
     float t = thermocouple.readCelsius();
     if (!isnan(t) && t < 55.0) {
@@ -410,8 +367,7 @@ void loop() {
     if (now - lastLcdUpdate >= 500) { updateLcd(); lastLcdUpdate = now; }
     delay(10); return;
   }
-
-  // ── POST-CYCLE FAN RUNDOWN ────────────────────────────────
+//POST-FAN-COOLING
   if (!isRunning && fanForced) {
     float t = thermocouple.readCelsius();
     if (!isnan(t) && t < 55.0) {
@@ -430,12 +386,12 @@ void loop() {
     delay(10); return;
   }
 
-  // ── SSR TIME PROPORTIONING ────────────────────────────────
+  //SSR TIME PROPORTIONING
   unsigned long winElapsed = now - windowStartTime;
   if (winElapsed >= WINDOW_MS) { windowStartTime = now; winElapsed = 0; }
   setSSR(Output > (double)winElapsed);
 
-  // ── AI RAMP SMOOTHING ─────────────────────────────────────
+  //AI RAMP SMOOTHING
   if (aiActive && isRunning && cycleState != COOLING_DOWN) {
     double diff = aiCorrection - aiCorrectionInt;
     if (abs(diff) <= AI_RAMP_STEP) aiCorrectionInt = aiCorrection;
@@ -445,7 +401,7 @@ void loop() {
     else aiCorrectionInt -= (aiCorrectionInt > 0 ? AI_RAMP_STEP : -AI_RAMP_STEP);
   }
 
-  // ── 1-SECOND TICK ─────────────────────────────────────────
+  
   if (now - lastTickTime < 1000) {
     if (now - lastLcdUpdate >= 200) { updateLcd(); lastLcdUpdate = now; }
     delay(5); return;
@@ -453,12 +409,12 @@ void loop() {
   lastTickTime = now;
   totalElapsed = (int)((now - cycleStartTime) / 1000);
 
-  // ── AI TIMEOUT ────────────────────────────────────────────
+  //AI TIMEOUT 
   if (aiActive && (now - aiCorrLastRx) > AI_RX_TIMEOUT && aiCorrection != 0.0) {
     aiCorrection = 0.0;
   }
 
-  // ── A. READ TEMPERATURE ───────────────────────────────────
+  // A. READ TEMPERATURE
   float temp = readTempFiltered();
   if (temp < 0) {
     setSSR(false); setFan(255);
@@ -466,7 +422,7 @@ void loop() {
     Serial.println(F("[FAULT] Thermocouple fault.")); lcdNeedsRedraw = true; return;
   }
 
-  // ── B. OVER-TEMP ──────────────────────────────────────────
+  //B. OVER-TEMP
   if (temp > overTemp) {
     setSSR(false); setFan(255);
     isRunning = false; cycleState = FAULT;
@@ -474,13 +430,13 @@ void loop() {
     lcdNeedsRedraw = true; return;
   }
 
-  // ── C. WAYPOINT TIMEOUT ───────────────────────────────────
+  //C. WAYPOINT TIMEOUT 
   int wpElapsed = (int)((now - waypointStartTime) / 1000);
   if (cycleState == RAMPING && wpElapsed > waypointTimeout[waypointIndex]) {
     advanceWaypoint("timeout"); return;
   }
 
-  // ── D. STATE MACHINE ──────────────────────────────────────
+  // D. STATE MACHINE 
   if (cycleState == RAMPING) {
     Setpoint = waypointTemp[waypointIndex];
     if (temp >= Setpoint - 5.0) {
@@ -504,7 +460,7 @@ void loop() {
     logSerial(temp); return;
   }
 
-  // ── E. ZONE PID ───────────────────────────────────────────
+  //E. ZONE PID
   PIDGains g = getZoneGains(temp, Setpoint);
   curKp = g.Kp; curKi = g.Ki; curKd = g.Kd;
 
@@ -521,13 +477,13 @@ void loop() {
   if (cycleState == COOLING_DOWN || cycleState == DONE) appliedCorr = 0.0;
   Output = constrain(pidOutput + appliedCorr, 0.0, (double)WINDOW_MS);
 
-  // ── F. FAN ────────────────────────────────────────────────
+  // F. FAN
   int fanSpeed = 0;
   if (cycleState == COOLING_DOWN)  fanSpeed = 255;
   else if (temp > Setpoint + 5.0)  fanSpeed = 200;
   setFan(fanSpeed);
 
-  // ── G. SERIAL ─────────────────────────────────────────────
+  // G. SERIAL
   if (now - lastPrintTime >= 2000) {
     lastPrintTime = now;
     logSerial(temp);
@@ -536,13 +492,13 @@ void loop() {
   if (now - lastLcdUpdate >= 500) { updateLcd(); lastLcdUpdate = now; }
 }
 
-// ═════════════════════════════════════════════════════════════
-//  LCD UPDATE — all screen states
-// ═════════════════════════════════════════════════════════════
+
+//LCD UPDATE — all screen states
+
 void updateLcd() {
   char l0[17], l1[17];
 
-  // ── HOT-BOOT COOL-DOWN ────────────────────────────────────
+  //HOT-BOOT COOL-DOWN 
   if (fanForced && !selectingMode && !isRunning) {
     snprintf(l0, 17, "CT=%-5.1f COOLING", lastValidTemp);
     snprintf(l1, 17, "Fan ON  Wait... ");
@@ -550,7 +506,7 @@ void updateLcd() {
     return;
   }
 
-  // ── MODE SELECT ───────────────────────────────────────────
+  //MODE SELECT 
   if (selectingMode) {
     // Line 0: show mode number + name
     if (selectedMode <= 3) {
@@ -566,7 +522,7 @@ void updateLcd() {
     return;
   }
 
-  // ── FAULT ─────────────────────────────────────────────────
+  //FAULT
   if (cycleState == FAULT) {
     snprintf(l0, 17, "!! FAULT !!     ");
     snprintf(l1, 17, "ABT=Reset ChkTC ");
@@ -574,7 +530,7 @@ void updateLcd() {
     return;
   }
 
-  // ── COOLING DOWN (post-peak fan rundown) ──────────────────
+  // COOLING DOWN (post-peak fan rundown) 
   if (cycleState == COOLING_DOWN || (fanForced && !isRunning)) {
     snprintf(l0, 17, "CT=%-5.1f COOLING", lastValidTemp);
     snprintf(l1, 17, "ABT=Stop  t+%ds ", totalElapsed);
@@ -582,7 +538,7 @@ void updateLcd() {
     return;
   }
 
-  // ── DONE ──────────────────────────────────────────────────
+  //DONE
   if (cycleState == DONE) {
     snprintf(l0, 17, "CT=%-5.1f  DONE! ", lastValidTemp);
     snprintf(l1, 17, "STR=Again CHG-M ");
@@ -590,7 +546,7 @@ void updateLcd() {
     return;
   }
 
-  // ── IDLE (mode confirmed, waiting for START) ──────────────
+  //IDLE (mode confirmed, waiting for START)
   if (!isRunning && idleReady) {
     snprintf(l0, 17, "CT=%-5.1f  M%d    ", lastValidTemp, selectedMode);
     snprintf(l1, 17, "STR=Go ABT CHG-M");
@@ -598,11 +554,9 @@ void updateLcd() {
     return;
   }
 
-  // ── RUNNING ───────────────────────────────────────────────
+  //RUNNING 
   if (isRunning) {
-    // Line 0: CT=xxx.x <WAYPOINT>
-    // waypointShort is 7 chars, temp field is "xxx.x" (5 chars)
-    // "CT=xxx.x " = 9 chars + 7 waypoint = 16 total
+   
     snprintf(l0, 17, "CT=%-5.1f %s",
              lastValidTemp,
              waypointShort[waypointIndex]);
@@ -624,15 +578,14 @@ void updateLcd() {
     return;
   }
 
-  // ── FALLBACK IDLE ─────────────────────────────────────────
+  //FALLBACK IDLE 
   snprintf(l0, 17, "CT=%-5.1f  IDLE  ", lastValidTemp);
   snprintf(l1, 17, "STR=Start MOD=Md");
   lcdPrint(0, l0); lcdPrint(1, l1);
 }
 
-// ═════════════════════════════════════════════════════════════
 //  BUTTON HANDLING — edge-triggered debounce + double-click
-// ═════════════════════════════════════════════════════════════
+
 void updateButtons() {
   unsigned long now = millis();
   modeDblClick = false;
@@ -683,7 +636,7 @@ void updateButtons() {
 }
 
 void handleButtons() {
-  // ── MODE SELECT screen ────────────────────────────────────
+  //MODE SELECT screen
   if (selectingMode) {
     // Double-click MODE = cycle through modes
     if (modeDblClick) {
@@ -701,7 +654,7 @@ void handleButtons() {
     return;
   }
 
-  // ── IDLE screen ───────────────────────────────────────────
+  //IDLE screen 
   if (!isRunning) {
     // START = begin cycle
     if (btnStart.pressed && idleReady) {
@@ -724,7 +677,7 @@ void handleButtons() {
     return;
   }
 
-  // ── RUNNING screen ────────────────────────────────────────
+  //RUNNING screen
   if (isRunning) {
     // ABORT = stop cycle
     if (btnAbort.pressed) {
@@ -736,9 +689,9 @@ void handleButtons() {
   }
 }
 
-// ═════════════════════════════════════════════════════════════
+
 //  CYCLE CONTROL
-// ═════════════════════════════════════════════════════════════
+
 void startCycle(float bootTemp) {
   waypointIndex = 1;
   for (int i = 1; i < NUM_POINTS - 1; i++) {
@@ -786,9 +739,9 @@ void abortCycle() {
   Serial.println(F("[ABORT] Aborted. Fan running."));
 }
 
-// ═════════════════════════════════════════════════════════════
+
 //  ADVANCE WAYPOINT
-// ═════════════════════════════════════════════════════════════
+
 void advanceWaypoint(const char* reason) {
   waypointIndex++;
   integral          = 0.0;
@@ -813,9 +766,8 @@ void advanceWaypoint(const char* reason) {
        Serial.print(F("C (")); Serial.print(reason); Serial.println(F(")")));
 }
 
-// ═════════════════════════════════════════════════════════════
-//  TEMPERATURE GLITCH FILTER
-// ═════════════════════════════════════════════════════════════
+//TEMPERATURE GLITCH FILTER
+
 float readTempFiltered() {
   uint8_t fault = thermocouple.readError();
   if (fault) {
@@ -833,9 +785,9 @@ float readTempFiltered() {
   return raw;
 }
 
-// ═════════════════════════════════════════════════════════════
-//  SERIAL LOG
-// ═════════════════════════════════════════════════════════════
+
+//SERIAL LOG
+
 void logSerial(float temp) {
   const char* phaseStr = "IDLE";
   if      (cycleState == RAMPING)      phaseStr = "RAMP";
@@ -860,9 +812,9 @@ void logSerial(float temp) {
   Serial.print(F(",t:"));        Serial.println(totalElapsed);
 }
 
-// ═════════════════════════════════════════════════════════════
-//  ZONE PID — MODE-AWARE
-// ═════════════════════════════════════════════════════════════
+
+//ZONE PID — MODE-AWARE
+
 PIDGains getZoneGains(float temp, float setpoint) {
   float error = setpoint - temp;
 
@@ -897,6 +849,6 @@ PIDGains getZoneGains(float temp, float setpoint) {
   return {150.0, 0.80, 30.0};
 }
 
-// ── HELPERS ───────────────────────────────────────────────────
+//HELPERS 
 void setSSR(bool on)   { digitalWrite(SSR_PIN, on ? HIGH : LOW); }
 void setFan(int speed) { ledcWrite(FAN_LEDC_CH, constrain(speed, 0, 255)); }
